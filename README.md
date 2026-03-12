@@ -1,6 +1,6 @@
 # Real-Time E-Commerce Order Management System
 
-> A microservices platform demonstrating event-driven architecture, GraphQL Federation, and real-time updates — built to showcase distributed systems design skills.
+> A microservices platform demonstrating event-driven architecture, GraphQL Federation, and real-time updates — built to showcase distributed systems design.
 
 ## Architecture
 
