@@ -1,0 +1,337 @@
+version: '3.8'
+
+services:
+  # Message Broker
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    hostname: zookeeper
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-logs:/var/lib/zookeeper/log
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    hostname: kafka
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "9101:9101"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_OPTS: -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Djava.rmi.server.hostname=kafka -Dcom.sun.management.jmxremote.rmi.port=9101
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+
+  # Databases
+  postgres-orders:
+    image: postgres:15-alpine
+    hostname: postgres-orders
+    container_name: postgres-orders
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: orders_db
+      POSTGRES_USER: orderuser
+      POSTGRES_PASSWORD: orderpass
+    volumes:
+      - postgres-orders-data:/var/lib/postgresql/data
+      - ./databases/orders-init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orderuser -d orders_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-inventory:
+    image: postgres:15-alpine
+    hostname: postgres-inventory
+    container_name: postgres-inventory
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: inventory_db
+      POSTGRES_USER: inventoryuser
+      POSTGRES_PASSWORD: inventorypass
+    volumes:
+      - postgres-inventory-data:/var/lib/postgresql/data
+      - ./databases/inventory-init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inventoryuser -d inventory_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-users:
+    image: postgres:15-alpine
+    hostname: postgres-users
+    container_name: postgres-users
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_DB: users_db
+      POSTGRES_USER: useruser
+      POSTGRES_PASSWORD: userpass
+    volumes:
+      - postgres-users-data:/var/lib/postgresql/data
+      - ./databases/users-init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U useruser -d users_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    hostname: redis
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Microservices
+  order-service:
+    build:
+      context: ..
+      dockerfile: services/order-service/Dockerfile
+    hostname: order-service
+    container_name: order-service
+    ports:
+      - "3001:3000"
+    depends_on:
+      - postgres-orders
+      - kafka
+      - redis
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://orderuser:orderpass@postgres-orders:5432/orders_db
+      - KAFKA_BROKER=kafka:29092
+      - REDIS_URL=redis://redis:6379
+      - GRAPHQL_PORT=3000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  inventory-service:
+    build:
+      context: ../services/inventory-service
+      dockerfile: Dockerfile
+    hostname: inventory-service
+    container_name: inventory-service
+    ports:
+      - "3002:8080"
+    depends_on:
+      - postgres-inventory
+      - kafka
+    environment:
+      - SPRING_PROFILES_ACTIVE=production
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-inventory:5432/inventory_db
+      - SPRING_DATASOURCE_USERNAME=inventoryuser
+      - SPRING_DATASOURCE_PASSWORD=inventorypass
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  payment-service:
+    build:
+      context: ..
+      dockerfile: services/payment-service/Dockerfile
+    hostname: payment-service
+    container_name: payment-service
+    ports:
+      - "3003:3000"
+    depends_on:
+      - kafka
+      - redis
+    environment:
+      - NODE_ENV=production
+      - KAFKA_BROKER=kafka:29092
+      - REDIS_URL=redis://redis:6379
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  notification-service:
+    build:
+      context: ../services/notification-service
+      dockerfile: Dockerfile
+    hostname: notification-service
+    container_name: notification-service
+    ports:
+      - "3004:8080"
+    depends_on:
+      - kafka
+    environment:
+      - SPRING_PROFILES_ACTIVE=production
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  user-service:
+    build:
+      context: ..
+      dockerfile: services/user-service/Dockerfile
+    hostname: user-service
+    container_name: user-service
+    ports:
+      - "3005:3000"
+    depends_on:
+      - postgres-users
+      - kafka
+      - redis
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://useruser:userpass@postgres-users:5432/users_db
+      - KAFKA_BROKER=kafka:29092
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Gateway
+  graphql-gateway:
+    build:
+      context: ..
+      dockerfile: gateway/graphql-gateway/Dockerfile
+    hostname: graphql-gateway
+    container_name: graphql-gateway
+    ports:
+      - "4000:4000"
+      - "4001:4001"  # WebSocket subscriptions
+    depends_on:
+      - order-service
+      - user-service
+    environment:
+      - NODE_ENV=production
+      - ORDER_SERVICE_URL=http://order-service:3000/graphql
+      - USER_SERVICE_URL=http://user-service:3000/graphql
+      - REDIS_URL=redis://redis:6379
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Frontend
+  angular-client:
+    build:
+      context: ..
+      dockerfile: frontend/angular-client/Dockerfile
+    hostname: angular-client
+    container_name: angular-client
+    ports:
+      - "4200:80"
+    depends_on:
+      - graphql-gateway
+    environment:
+      - GRAPHQL_ENDPOINT=http://localhost:4000/graphql
+      - WEBSOCKET_ENDPOINT=ws://localhost:4001/subscriptions
+    restart: unless-stopped
+
+  # Monitoring
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    hostname: prometheus
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    hostname: grafana
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=grafana
+      - GF_USERS_ALLOW_SIGN_UP=false
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.50
+    hostname: jaeger
+    container_name: jaeger
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    restart: unless-stopped
+
+volumes:
+  zookeeper-data:
+  zookeeper-logs:
+  kafka-data:
+  postgres-orders-data:
+  postgres-inventory-data:
+  postgres-users-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  default:
+    name: microservices-network
+    driver: bridge

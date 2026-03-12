@@ -1,0 +1,124 @@
+groups:
+  - name: microservices.rules
+    rules:
+      # Service Health Alerts
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.instance }} is down"
+          description: "{{ $labels.job }} service at {{ $labels.instance }} has been down for more than 1 minute."
+
+      # High Response Time Alerts  
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_ms_bucket[5m])) > 200
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High response time on {{ $labels.instance }}"
+          description: "95th percentile response time is {{ $value }}ms on {{ $labels.instance }}"
+
+      # High Error Rate Alerts
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate on {{ $labels.instance }}"
+          description: "Error rate is {{ $value }} per second on {{ $labels.instance }}"
+
+      # Database Connection Alerts
+      - alert: DatabaseConnectionFailure
+        expr: database_connections_failed_total > 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database connection failures detected"
+          description: "Database connection failures detected on {{ $labels.instance }}"
+
+      # Kafka Consumer Lag Alert
+      - alert: KafkaConsumerLag
+        expr: kafka_consumer_lag_sum > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka consumer lag is high"
+          description: "Kafka consumer lag is {{ $value }} messages on {{ $labels.instance }}"
+
+      # Memory Usage Alert
+      - alert: HighMemoryUsage
+        expr: (container_memory_usage_bytes / container_spec_memory_limit_bytes) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value }}% on {{ $labels.instance }}"
+
+      # CPU Usage Alert  
+      - alert: HighCpuUsage
+        expr: rate(container_cpu_usage_seconds_total[5m]) * 100 > 80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value }}% on {{ $labels.instance }}"
+
+      # Disk Space Alert
+      - alert: DiskSpaceRunningLow
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk space running low"
+          description: "Disk space is {{ $value }}% full on {{ $labels.instance }}"
+
+  - name: business.rules
+    rules:
+      # Order Processing Alerts
+      - alert: OrderProcessingFailure
+        expr: increase(orders_failed_total[5m]) > 10
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High number of failed orders"
+          description: "{{ $value }} orders failed in the last 5 minutes"
+
+      # Payment Processing Alerts  
+      - alert: PaymentProcessingFailure
+        expr: increase(payments_failed_total[5m]) > 5
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High number of failed payments"
+          description: "{{ $value }} payments failed in the last 5 minutes"
+
+      # Inventory Alerts
+      - alert: LowInventory
+        expr: inventory_available_quantity < 5
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low inventory for product {{ $labels.product_id }}"
+          description: "Only {{ $value }} units remaining for product {{ $labels.product_id }}"
+
+      # User Registration Failures
+      - alert: UserRegistrationFailure
+        expr: increase(user_registration_failed_total[10m]) > 20
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High number of user registration failures"
+          description: "{{ $value }} user registrations failed in the last 10 minutes"

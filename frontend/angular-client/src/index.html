@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>E-Commerce Order Management System</title>
+  <base href="/">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Modern microservices-based e-commerce order management system">
+  <meta name="author" content="OMS Team">
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  
+  <!-- Material Design Icons -->
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  
+  <!-- Google Fonts - Roboto -->
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  
+  <!-- Preconnect for performance -->
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  
+  <!-- Progressive Web App Manifest -->
+  <link rel="manifest" href="manifest.json">
+  
+  <!-- Theme Color -->
+  <meta name="theme-color" content="#3f51b5">
+  
+  <!-- Apple Touch Icon -->
+  <link rel="apple-touch-icon" href="icons/icon-192x192.png">
+  
+  <!-- Material Design Theme Variables -->
+  <style>
+    :root {
+      --primary-color: #3f51b5;
+      --accent-color: #ff4081;
+      --warn-color: #f44336;
+      --background-color: #fafafa;
+      --surface-color: #ffffff;
+      --text-primary: #212121;
+      --text-secondary: #757575;
+    }
+    
+    /* Loading Screen Styles */
+    .loading-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+      color: white;
+      font-family: 'Roboto', sans-serif;
+    }
+    
+    .loading-logo {
+      font-size: 3rem;
+      font-weight: 300;
+      margin-bottom: 2rem;
+      text-align: center;
+    }
+    
+    .loading-spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid rgba(255, 255, 255, 0.3);
+      border-top: 4px solid white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 1rem;
+    }
+    
+    .loading-text {
+      font-size: 1.1rem;
+      font-weight: 400;
+      opacity: 0.9;
+      text-align: center;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    /* Hide loading screen when app loads */
+    .app-loaded .loading-screen {
+      opacity: 0;
+      transition: opacity 0.3s ease-out;
+      pointer-events: none;
+    }
+    
+    /* Ensure app root takes full height */
+    app-root {
+      display: block;
+      height: 100vh;
+      width: 100%;
+    }
+  </style>
+</head>
+<body class="mat-typography">
+  <!-- Loading Screen -->
+  <div class="loading-screen" id="loading-screen">
+    <div class="loading-logo">
+      E-Commerce OMS
+    </div>
+    <div class="loading-spinner"></div>
+    <div class="loading-text">
+      Loading Order Management System...
+    </div>
+  </div>
+  
+  <!-- Angular Application Root -->
+  <app-root></app-root>
+  
+  <!-- Hide loading screen when Angular loads -->
+  <script>
+    // Hide loading screen when app is ready
+    document.addEventListener('DOMContentLoaded', function() {
+      setTimeout(() => {
+        const loadingScreen = document.getElementById('loading-screen');
+        if (loadingScreen) {
+          loadingScreen.style.opacity = '0';
+          setTimeout(() => {
+            loadingScreen.style.display = 'none';
+          }, 300);
+        }
+      }, 2000); // Show loading for 2 seconds minimum
+    });
+    
+    // Error handling for failed app load
+    window.addEventListener('error', function(e) {
+      const loadingText = document.querySelector('.loading-text');
+      if (loadingText) {
+        loadingText.textContent = 'Error loading application. Please refresh the page.';
+        loadingText.style.color = '#ffab91';
+      }
+    });
+  </script>
+  
+  <!-- Service Worker Registration (for PWA support) -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then((registration) => {
+            console.log('SW registered: ', registration);
+          })
+          .catch((registrationError) => {
+            console.log('SW registration failed: ', registrationError);
+          });
+      });
+    }
+  </script>
+</body>
+</html>
