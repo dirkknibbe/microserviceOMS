@@ -2,8 +2,6 @@
 
 > A production-grade microservices platform demonstrating event-driven architecture, GraphQL Federation, and real-time updates — built to showcase distributed systems design skills.
 
-![Architecture](docs/architecture/system-overview.md)
-
 ## Architecture
 
 ```
@@ -80,7 +78,7 @@ Infrastructure: PostgreSQL × 3 · Redis · Prometheus · Grafana · Jaeger
 
 ```bash
 # Clone the repo
-git clone <repo-url>
+git clone https://github.com/dirkknibbe/microserviceOMS.git
 cd microserviceOMS
 
 # Start all infrastructure + services
