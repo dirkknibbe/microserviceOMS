@@ -83,6 +83,12 @@ CLAUDE.md
 # Test coverage
 .nyc_output/
 
+# Generated test reports (skew GitHub language stats, never belong in git)
+tests/playwright-report/
+tests/test-results/
+playwright-report/
+test-results/
+
 # TypeScript build cache
 *.tsbuildinfo
 
