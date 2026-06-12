@@ -76,6 +76,9 @@ app:
     reservation-timeout-minutes: 60
     low-stock-threshold: 10
 
+  fulfillment:
+    step-delay-ms: 2000
+
 ---
 spring:
   config:
