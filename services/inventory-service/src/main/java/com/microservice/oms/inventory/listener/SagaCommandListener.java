@@ -32,7 +32,7 @@ public class SagaCommandListener {
             }
             acknowledgment.acknowledge();
         } catch (Exception e) {
-            log.error("Error processing {} command", type, e);
+            log.error("Error processing {} command for orderId={}", type, payload.get("orderId"), e);
             acknowledgment.acknowledge(); // avoid infinite reprocessing; DLQ is roadmap
         }
     }
