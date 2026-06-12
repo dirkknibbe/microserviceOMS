@@ -55,3 +55,19 @@ INSERT INTO order_status_history (order_id, old_status, new_status, reason) VALU
     ('550e8400-e29b-41d4-a716-446655440001', NULL, 'PENDING', 'Order created'),
     ('550e8400-e29b-41d4-a716-446655440002', 'PENDING', 'CONFIRMED', 'Inventory confirmed'),
     ('550e8400-e29b-41d4-a716-446655440003', 'CONFIRMED', 'PAID', 'Payment processed');
+
+-- Saga instance tracking
+CREATE TABLE IF NOT EXISTS saga_instances (
+    saga_id UUID PRIMARY KEY,
+    current_state VARCHAR(32) NOT NULL,
+    history JSONB NOT NULL DEFAULT '[]',
+    correlation_id VARCHAR(64) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Processed events for idempotency
+CREATE TABLE IF NOT EXISTS processed_events (
+    event_id UUID PRIMARY KEY,
+    processed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
