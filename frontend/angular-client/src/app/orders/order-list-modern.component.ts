@@ -300,9 +300,12 @@ interface Order {
 
     .status-pending { background-color: #ff9800; color: white; }
     .status-confirmed { background-color: #2196f3; color: white; }
+    .status-processing { background-color: #03a9f4; color: white; }
     .status-paid { background-color: #4caf50; color: white; }
     .status-shipped { background-color: #9c27b0; color: white; }
     .status-delivered { background-color: #8bc34a; color: white; }
+    .status-completed { background-color: #4caf50; color: white; }
+    .status-failed { background-color: #f44336; color: white; }
     .status-cancelled { background-color: #f44336; color: white; }
 
     .empty-state {
