@@ -81,7 +81,7 @@ export class SagaService {
 
     const order = await this.orderRepository.findOne({ where: { id: payload.orderId }, relations: ['items'] });
     if (!order) {
-      this.logger.warn(`Order ${payload.orderId} not found for saga transition — skipping`);
+      this.logger.error(`Order ${payload.orderId} not found for saga transition — skipping`);
       return;
     }
 
@@ -163,7 +163,7 @@ export class SagaService {
     const eventTypeMap: Record<SagaOrderEventType, string> = {
       ORDER_CONFIRMED: 'ORDER_CONFIRMED',
       ORDER_SHIPPED_NOTICE: 'ORDER_STATUS_UPDATED',
-      ORDER_FAILED: 'ORDER_CANCELLED',
+      ORDER_FAILED: 'ORDER_STATUS_UPDATED',
     };
     this.kafkaClient.emit(KAFKA_TOPICS.ORDER_EVENTS, {
       eventType: eventTypeMap[kind],
@@ -172,7 +172,9 @@ export class SagaService {
       ...(kind === 'ORDER_SHIPPED_NOTICE'
         ? { oldStatus: OrderStatus.PROCESSING, newStatus: OrderStatus.SHIPPED }
         : {}),
-      ...(kind === 'ORDER_FAILED' ? { reason: 'Saga failed' } : {}),
+      ...(kind === 'ORDER_FAILED'
+        ? { oldStatus: OrderStatus.PENDING, newStatus: OrderStatus.FAILED, reason: 'Saga failed' }
+        : {}),
       timestamp: new Date(),
       correlationId,
     });

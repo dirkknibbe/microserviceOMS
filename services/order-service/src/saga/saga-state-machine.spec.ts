@@ -38,4 +38,14 @@ describe('saga transition', () => {
       }
     }
   });
+
+  it('never lets a transition target state re-accept its own triggering message (redelivery safety)', () => {
+    for (const [from, msg, to] of legal) {
+      const redelivered = transition(to, msg);
+      expect({ pair: `${from}|${msg}`, isNoOp: redelivered.isNoOp }).toEqual({
+        pair: `${from}|${msg}`,
+        isNoOp: true,
+      });
+    }
+  });
 });
