@@ -77,3 +77,44 @@ export interface RefundProcessedEvent {
   timestamp: Date;
   correlationId: string;
 }
+
+export interface PaymentAuthorizedEvent {
+  eventType: 'PAYMENT_AUTHORIZED';
+  eventId: string;
+  authorizationId: string;
+  orderId: string;
+  amount: number;
+  timestamp: Date;
+  correlationId: string;
+}
+
+export interface PaymentAuthFailedEvent {
+  eventType: 'PAYMENT_AUTH_FAILED';
+  eventId: string;
+  orderId: string;
+  amount: number;
+  reason: string;
+  timestamp: Date;
+  correlationId: string;
+}
+
+export interface PaymentCapturedEvent {
+  eventType: 'PAYMENT_CAPTURED';
+  eventId: string;
+  authorizationId: string;
+  orderId: string;
+  amount: number;
+  timestamp: Date;
+  correlationId: string;
+}
+
+export interface PaymentCaptureFailedEvent {
+  eventType: 'PAYMENT_CAPTURE_FAILED';
+  eventId: string;
+  authorizationId: string;
+  orderId: string;
+  amount: number;
+  reason: string;
+  timestamp: Date;
+  correlationId: string;
+}

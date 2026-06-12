@@ -59,3 +59,11 @@ export interface StockUpdatedEvent {
   timestamp: Date;
   correlationId: string;
 }
+
+export interface InventoryReleasedEvent {
+  eventType: 'INVENTORY_RELEASED';
+  eventId: string;
+  orderId: string;
+  timestamp: Date;
+  correlationId: string;
+}

@@ -223,11 +223,14 @@ export class OrderService {
 
   private isValidStatusTransition(from: OrderStatus, to: OrderStatus): boolean {
     const validTransitions: Record<OrderStatus, OrderStatus[]> = {
-      [OrderStatus.PENDING]: [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
-      [OrderStatus.CONFIRMED]: [OrderStatus.PAID, OrderStatus.CANCELLED],
-      [OrderStatus.PAID]: [OrderStatus.SHIPPED, OrderStatus.CANCELLED],
+      [OrderStatus.PENDING]: [OrderStatus.PROCESSING, OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
+      [OrderStatus.PROCESSING]: [OrderStatus.CONFIRMED, OrderStatus.FAILED, OrderStatus.CANCELLED],
+      [OrderStatus.CONFIRMED]: [OrderStatus.PAID, OrderStatus.FAILED, OrderStatus.CANCELLED],
+      [OrderStatus.PAID]: [OrderStatus.SHIPPED, OrderStatus.FAILED, OrderStatus.CANCELLED],
       [OrderStatus.SHIPPED]: [OrderStatus.DELIVERED],
-      [OrderStatus.DELIVERED]: [], // Terminal state
+      [OrderStatus.DELIVERED]: [OrderStatus.COMPLETED],
+      [OrderStatus.COMPLETED]: [], // Terminal state
+      [OrderStatus.FAILED]: [], // Terminal state
       [OrderStatus.CANCELLED]: [], // Terminal state
     };
 
