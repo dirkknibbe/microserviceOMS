@@ -42,6 +42,43 @@
 Infrastructure: PostgreSQL × 3 · Redis · Prometheus · Grafana · Jaeger
 ```
 
+## Saga in action
+
+The order lifecycle runs as an **orchestrated saga**: a persisted state machine inside order-service commands the other services over Kafka and reacts to their reply events. Order status is a projection of saga state.
+
+```
+ORDER_CREATED             → AWAITING_STOCK      + send RESERVE_STOCK
+AWAITING_STOCK
+  ← INVENTORY_RESERVED    → AWAITING_AUTH       + send AUTHORIZE_PAYMENT
+  ← RESERVATION_FAILED    → FAILED
+AWAITING_AUTH
+  ← PAYMENT_AUTHORIZED    → RELEASED            + send RELEASE_ORDER
+  ← PAYMENT_AUTH_FAILED   → COMPENSATING        + send RELEASE_STOCK
+RELEASED → PICKED → PACKED (warehouse simulator, 2s apart)
+  ← ORDER_SHIPPED         → AWAITING_CAPTURE    + send CAPTURE_PAYMENT
+AWAITING_CAPTURE
+  ← PAYMENT_CAPTURED      → COMPLETED
+  ← CAPTURE_FAILED        → CAPTURE_FAILED      (terminal — goods shipped, ops alert)
+COMPENSATING
+  ← INVENTORY_RELEASED    → COMPENSATED         (order FAILED, stock released)
+```
+
+Deterministic demo triggers (matched on exact order total in payment-service):
+
+| Order total | What happens | Final order status |
+|-------------|--------------|--------------------|
+| $13.13 | Payment authorization declines → compensation releases the stock reservation | `FAILED` |
+| $26.26 | Authorizes and ships, then payment capture fails → ops alert logged | `SHIPPED` |
+| anything else | Reserve → authorize → pick/pack/ship → capture | `COMPLETED` |
+
+One-command demo (requires the full stack up — see Quick Start):
+
+```bash
+bash scripts/test-saga-flow.sh
+```
+
+The script places three orders through the gateway and polls each until it reaches its expected terminal status. Every hop logs the same `correlationId`, so a single grep traces an order across all three services.
+
 ## Tech Stack
 
 | Layer | Technology |
