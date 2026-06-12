@@ -197,8 +197,10 @@ describe('ProductListComponent', () => {
       const viewToggle = compiled.querySelector('.view-toggle');
       expect(viewToggle).toBeTruthy();
       
-      const gridButton = compiled.querySelector('button:contains("Grid")');
-      const tableButton = compiled.querySelector('button:contains("Table")');
+      const buttonLabels = Array.from(viewToggle?.querySelectorAll('button') ?? [])
+        .map(button => button.textContent ?? '');
+      expect(buttonLabels.some(label => label.includes('Grid'))).toBeTrue();
+      expect(buttonLabels.some(label => label.includes('Table'))).toBeTrue();
       expect(viewToggle?.children.length).toBe(2);
     });
 

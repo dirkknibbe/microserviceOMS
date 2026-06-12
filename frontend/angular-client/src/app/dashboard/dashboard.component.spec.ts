@@ -39,9 +39,9 @@ describe('DashboardComponent', () => {
     });
 
     it('should call loadDashboardData on init', () => {
-      spyOn(component, 'loadDashboardData' as any);
+      const loadDashboardDataSpy = spyOn<any>(component, 'loadDashboardData');
       component.ngOnInit();
-      expect(component.loadDashboardData).toHaveBeenCalled();
+      expect(loadDashboardDataSpy).toHaveBeenCalled();
     });
   });
 
@@ -112,7 +112,7 @@ describe('DashboardComponent', () => {
   describe('Recent Orders Table', () => {
     it('should display order rows', () => {
       fixture.detectChanges();
-      const orderRows = compiled.querySelectorAll('.orders-table mat-row');
+      const orderRows = compiled.querySelectorAll('.orders-table tr[mat-row]');
       expect(orderRows.length).toBe(component.recentOrders.length);
     });
 
