@@ -1,22 +1,39 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Inject, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ClientProxy } from '@nestjs/microservices';
 import Stripe from 'stripe';
-import { createLogger, CorrelationIdGenerator } from '../../../shared/utils';
-import { 
-  PaymentInitiatedEvent, 
-  PaymentProcessedEvent, 
+import { createLogger, CorrelationIdGenerator } from '@shared/utils';
+import {
+  PaymentInitiatedEvent,
+  PaymentProcessedEvent,
   PaymentFailedEvent,
   PaymentStatus,
   PaymentMethod,
-  KAFKA_TOPICS 
-} from '../../../shared/events';
+  KAFKA_TOPICS,
+  AuthorizePaymentCommand,
+  CapturePaymentCommand,
+} from '@shared/events';
 import { ProcessPaymentDto } from './dto/process-payment.dto';
+
+const AUTH_DECLINE_AMOUNT = 13.13;
+const CAPTURE_FAIL_AMOUNT = 26.26;
+
+interface StoredAuthorization {
+  authorizationId: string;
+  orderId: string;
+  amount: number;
+  status: 'AUTHORIZED' | 'CAPTURED' | 'CAPTURE_FAILED';
+}
 
 @Injectable()
 export class PaymentService {
   private readonly logger = createLogger('PaymentService');
   private readonly stripe: Stripe;
+
+  // In-memory store: payment-service has no database. Restart loses auths —
+  // acceptable for the mock processor; the saga itself is persisted in orders DB.
+  private readonly authorizations = new Map<string, StoredAuthorization>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -128,6 +145,83 @@ export class PaymentService {
 
       throw new InternalServerErrorException('Payment processing failed');
     }
+  }
+
+  async authorizePayment(command: AuthorizePaymentCommand): Promise<void> {
+    const { orderId, amount, correlationId } = command;
+
+    if (amount === AUTH_DECLINE_AMOUNT) {
+      this.kafkaClient.emit(KAFKA_TOPICS.PAYMENT_EVENTS, {
+        eventType: 'PAYMENT_AUTH_FAILED',
+        eventId: randomUUID(),
+        orderId,
+        amount,
+        reason: 'Card declined by issuer (demo trigger)',
+        timestamp: new Date(),
+        correlationId,
+      });
+      this.logger.warn('Authorization declined', { correlationId, orderId, amount });
+      return;
+    }
+
+    const authorizationId = randomUUID();
+    this.authorizations.set(orderId, { authorizationId, orderId, amount, status: 'AUTHORIZED' });
+
+    this.kafkaClient.emit(KAFKA_TOPICS.PAYMENT_EVENTS, {
+      eventType: 'PAYMENT_AUTHORIZED',
+      eventId: randomUUID(),
+      authorizationId,
+      orderId,
+      amount,
+      timestamp: new Date(),
+      correlationId,
+    });
+    this.logger.info('Payment authorized', { correlationId, orderId, authorizationId });
+  }
+
+  async capturePayment(command: CapturePaymentCommand): Promise<void> {
+    const { orderId, amount, correlationId } = command;
+
+    // The saga's CAPTURE_PAYMENT command carries authorizationId: '' (the
+    // fulfillment reply doesn't have it) — always use the stored authorization.
+    const auth = this.authorizations.get(orderId);
+
+    const fail = (reason: string): void => {
+      this.kafkaClient.emit(KAFKA_TOPICS.PAYMENT_EVENTS, {
+        eventType: 'PAYMENT_CAPTURE_FAILED',
+        eventId: randomUUID(),
+        authorizationId: auth?.authorizationId ?? '',
+        orderId,
+        amount,
+        reason,
+        timestamp: new Date(),
+        correlationId,
+      });
+      this.logger.error('Capture failed', { correlationId, orderId, reason });
+    };
+
+    if (!auth) {
+      fail('authorization not found');
+      return;
+    }
+
+    if (amount === CAPTURE_FAIL_AMOUNT) {
+      this.authorizations.set(orderId, { ...auth, status: 'CAPTURE_FAILED' });
+      fail('Capture rejected by processor (demo trigger)');
+      return;
+    }
+
+    this.authorizations.set(orderId, { ...auth, status: 'CAPTURED' });
+    this.kafkaClient.emit(KAFKA_TOPICS.PAYMENT_EVENTS, {
+      eventType: 'PAYMENT_CAPTURED',
+      eventId: randomUUID(),
+      authorizationId: auth.authorizationId,
+      orderId,
+      amount,
+      timestamp: new Date(),
+      correlationId,
+    });
+    this.logger.info('Payment captured', { correlationId, orderId });
   }
 
   private async processStripePayment(

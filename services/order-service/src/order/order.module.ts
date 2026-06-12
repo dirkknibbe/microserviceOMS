@@ -4,6 +4,7 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { OrderService } from './order.service';
 import { OrderResolver, OrderItemResolver } from './order.resolver';
+import { SagaModule } from '../saga/saga.module';
 import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { OrderStatusHistory } from './entities/order-status-history.entity';
@@ -28,6 +29,7 @@ import { OrderStatusHistory } from './entities/order-status-history.entity';
         }),
       },
     ]),
+    SagaModule,
   ],
   providers: [OrderService, OrderResolver, OrderItemResolver],
   exports: [OrderService],

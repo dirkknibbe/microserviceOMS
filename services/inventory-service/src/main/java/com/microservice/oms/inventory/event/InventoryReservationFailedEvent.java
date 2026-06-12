@@ -13,6 +13,7 @@ import java.util.UUID;
 @AllArgsConstructor
 public class InventoryReservationFailedEvent {
     private String eventType;
+    private UUID eventId;
     private UUID orderId;
     private List<FailedItemDto> failedItems;
     private LocalDateTime timestamp;

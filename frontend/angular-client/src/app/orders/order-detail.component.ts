@@ -1,6 +1,9 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
+import { Apollo, gql, QueryRef } from 'apollo-angular';
+import { ApolloQueryResult } from '@apollo/client';
+import { Subscription } from 'rxjs';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -9,6 +12,64 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatStepperModule } from '@angular/material/stepper';
 
+const GET_ORDER_DETAIL = gql`
+  query GetOrderDetail($id: String!) {
+    order(id: $id) {
+      id
+      userId
+      status
+      totalAmount
+      createdAt
+      updatedAt
+      items {
+        id
+        productId
+        quantity
+        unitPrice
+        totalPrice
+      }
+      statusHistory {
+        id
+        newStatus
+        reason
+        changedAt
+      }
+    }
+  }
+`;
+
+// GraphQL query result interfaces
+interface OrderDetailQueryItem {
+  id: string;
+  productId: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+}
+
+interface OrderDetailQueryHistory {
+  id: string;
+  newStatus: string;
+  reason: string | null;
+  changedAt: string;
+}
+
+interface OrderDetailQueryOrder {
+  id: string;
+  userId: string;
+  status: string;
+  totalAmount: number;
+  createdAt: string;
+  updatedAt: string;
+  items: OrderDetailQueryItem[];
+  statusHistory: OrderDetailQueryHistory[];
+}
+
+interface GetOrderDetailResult {
+  order: OrderDetailQueryOrder | null;
+}
+
+// UI display model (maps backend data + placeholder fields)
 interface OrderDetail {
   id: string;
   customerName: string;
@@ -454,9 +515,12 @@ interface OrderDetail {
 
     .status-pending { background-color: #ff9800; color: white; }
     .status-confirmed { background-color: #2196f3; color: white; }
+    .status-processing { background-color: #03a9f4; color: white; }
     .status-paid { background-color: #4caf50; color: white; }
     .status-shipped { background-color: #9c27b0; color: white; }
     .status-delivered { background-color: #8bc34a; color: white; }
+    .status-completed { background-color: #4caf50; color: white; }
+    .status-failed { background-color: #f44336; color: white; }
     .status-cancelled { background-color: #f44336; color: white; }
 
     .payment-success { background-color: #4caf50; color: white; }
@@ -501,96 +565,109 @@ interface OrderDetail {
     }
   `]
 })
-export class OrderDetailComponent implements OnInit {
+export class OrderDetailComponent implements OnInit, OnDestroy {
+  private static readonly TERMINAL_STATUSES = ['COMPLETED', 'FAILED', 'CANCELLED', 'DELIVERED'];
+  private static readonly POLL_INTERVAL_MS = 3000;
+
   itemColumns: string[] = ['product', 'quantity', 'unitPrice', 'totalPrice'];
   order: OrderDetail | null = null;
   orderId: string = '';
 
-  constructor(private route: ActivatedRoute) {}
+  private queryRef: QueryRef<GetOrderDetailResult, { id: string }> | null = null;
+  private orderSubscription: Subscription | null = null;
+  private routeSubscription: Subscription | null = null;
+
+  constructor(private route: ActivatedRoute, private apollo: Apollo) {}
 
   ngOnInit(): void {
-    this.route.params.subscribe(params => {
+    this.routeSubscription = this.route.params.subscribe(params => {
       this.orderId = params['id'];
       this.loadOrderDetail();
     });
   }
 
+  ngOnDestroy(): void {
+    this.orderSubscription?.unsubscribe();
+    this.queryRef?.stopPolling();
+    this.routeSubscription?.unsubscribe();
+  }
+
   loadOrderDetail(): void {
-    // Simulate API call - replace with actual service call
-    setTimeout(() => {
-      this.order = {
-        id: this.orderId,
-        customerName: 'John Doe',
-        customerEmail: 'john.doe@email.com',
-        customerPhone: '+1 (555) 123-4567',
-        status: 'SHIPPED',
-        totalAmount: 299.99,
-        createdAt: '2024-01-15T10:30:00Z',
-        updatedAt: '2024-01-16T14:20:00Z',
-        shippingAddress: {
-          street: '123 Main St, Apt 4B',
-          city: 'New York',
-          state: 'NY',
-          zipCode: '10001',
-          country: 'United States'
-        },
-        billingAddress: {
-          street: '123 Main St, Apt 4B',
-          city: 'New York',
-          state: 'NY',
-          zipCode: '10001',
-          country: 'United States'
-        },
-        items: [
-          {
-            id: 'ITEM-001',
-            productId: 'PROD-001',
-            productName: 'Wireless Headphones',
-            productImage: 'https://via.placeholder.com/50x50/e3f2fd/1976d2?text=WH',
-            quantity: 1,
-            unitPrice: 199.99,
-            totalPrice: 199.99
-          },
-          {
-            id: 'ITEM-002',
-            productId: 'PROD-004',
-            productName: 'Smartphone Case',
-            productImage: 'https://via.placeholder.com/50x50/e3f2fd/1976d2?text=SC',
-            quantity: 4,
-            unitPrice: 24.99,
-            totalPrice: 99.96
-          }
-        ],
-        statusHistory: [
-          {
-            status: 'PENDING',
-            timestamp: '2024-01-15T10:30:00Z',
-            note: 'Order received and being processed'
-          },
-          {
-            status: 'CONFIRMED',
-            timestamp: '2024-01-15T11:15:00Z',
-            note: 'Order confirmed and payment authorized'
-          },
-          {
-            status: 'PAID',
-            timestamp: '2024-01-15T11:30:00Z',
-            note: 'Payment processed successfully'
-          },
-          {
-            status: 'SHIPPED',
-            timestamp: '2024-01-16T14:20:00Z',
-            note: 'Package shipped via UPS. Tracking: 1Z999AA1234567890'
-          }
-        ],
-        paymentInfo: {
-          method: 'Credit Card (**** 1234)',
-          status: 'SUCCESS',
-          transactionId: 'TXN-ABC123456789',
-          amount: 299.99
+    this.orderSubscription?.unsubscribe();
+    this.queryRef?.stopPolling();
+
+    const queryRef = this.apollo.watchQuery<GetOrderDetailResult, { id: string }>({
+      query: GET_ORDER_DETAIL,
+      variables: { id: this.orderId },
+      fetchPolicy: 'cache-and-network',
+      pollInterval: OrderDetailComponent.POLL_INTERVAL_MS
+    });
+    this.queryRef = queryRef;
+
+    this.orderSubscription = queryRef.valueChanges.subscribe({
+      next: (result: ApolloQueryResult<GetOrderDetailResult>) => {
+        const order = result.data?.order;
+        if (!order) {
+          return;
         }
-      };
-    }, 1000);
+        this.order = this.mapToOrderDetail(order);
+        if (OrderDetailComponent.TERMINAL_STATUSES.includes(order.status)) {
+          this.queryRef?.stopPolling();
+        }
+      },
+      error: (error: unknown) => {
+        console.error('Failed to load order detail', error);
+      }
+    });
+  }
+
+  // Customer, address, and payment fields are placeholders — the backend
+  // schema does not expose them (see GraphQL schema notes).
+  private mapToOrderDetail(order: OrderDetailQueryOrder): OrderDetail {
+    return {
+      id: order.id,
+      customerName: 'John Doe',
+      customerEmail: 'john.doe@email.com',
+      customerPhone: '+1 (555) 123-4567',
+      status: order.status,
+      totalAmount: Number(order.totalAmount),
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+      shippingAddress: {
+        street: '123 Main St, Apt 4B',
+        city: 'New York',
+        state: 'NY',
+        zipCode: '10001',
+        country: 'United States'
+      },
+      billingAddress: {
+        street: '123 Main St, Apt 4B',
+        city: 'New York',
+        state: 'NY',
+        zipCode: '10001',
+        country: 'United States'
+      },
+      items: (order.items || []).map((item: OrderDetailQueryItem) => ({
+        id: item.id,
+        productId: item.productId,
+        productName: `Product ${item.productId.slice(0, 8)}`,
+        productImage: 'https://via.placeholder.com/50x50/e3f2fd/1976d2?text=P',
+        quantity: item.quantity,
+        unitPrice: Number(item.unitPrice),
+        totalPrice: Number(item.totalPrice)
+      })),
+      statusHistory: (order.statusHistory || []).map((history: OrderDetailQueryHistory) => ({
+        status: history.newStatus,
+        timestamp: history.changedAt,
+        note: history.reason || undefined
+      })),
+      paymentInfo: {
+        method: 'Credit Card (**** 1234)',
+        status: 'SUCCESS',
+        transactionId: 'TXN-ABC123456789',
+        amount: Number(order.totalAmount)
+      }
+    };
   }
 
   calculateSubtotal(): number {
@@ -607,7 +684,7 @@ export class OrderDetailComponent implements OnInit {
   }
 
   isStatusCompleted(status: string): boolean {
-    const statusOrder = ['PENDING', 'CONFIRMED', 'PAID', 'SHIPPED', 'DELIVERED'];
+    const statusOrder = ['PENDING', 'CONFIRMED', 'PROCESSING', 'PAID', 'SHIPPED', 'DELIVERED', 'COMPLETED'];
     const currentIndex = statusOrder.indexOf(this.order?.status || '');
     const statusIndex = statusOrder.indexOf(status);
     return statusIndex <= currentIndex;
@@ -617,9 +694,12 @@ export class OrderDetailComponent implements OnInit {
     const icons: { [key: string]: string } = {
       'PENDING': 'hourglass_empty',
       'CONFIRMED': 'check_circle',
+      'PROCESSING': 'autorenew',
       'PAID': 'payment',
       'SHIPPED': 'local_shipping',
       'DELIVERED': 'done_all',
+      'COMPLETED': 'task_alt',
+      'FAILED': 'error',
       'CANCELLED': 'cancel'
     };
     return icons[status] || 'circle';

@@ -9,6 +9,7 @@ import { CreateOrderInput } from './dto/create-order.dto';
 import { UpdateOrderStatusInput } from './dto/update-order.dto';
 import { createLogger, CorrelationIdGenerator } from '@shared/utils';
 import { OrderCreatedEvent, OrderStatusUpdatedEvent, KAFKA_TOPICS } from '@shared/events';
+import { SagaService } from '../saga';
 
 @Injectable()
 export class OrderService {
@@ -23,6 +24,7 @@ export class OrderService {
     private readonly orderStatusHistoryRepository: Repository<OrderStatusHistory>,
     @Inject('KAFKA_SERVICE')
     private readonly kafkaClient: ClientProxy,
+    private readonly sagaService: SagaService,
   ) {}
 
   async create(createOrderInput: CreateOrderInput): Promise<Order> {
@@ -41,6 +43,9 @@ export class OrderService {
         '550e8400-e29b-41d4-a716-446655440201': 149.99,
         '550e8400-e29b-41d4-a716-446655440202': 199.99,
         '550e8400-e29b-41d4-a716-446655440203': 29.99,
+        // Saga demo triggers: these totals deterministically fail in payment-service
+        '550e8400-e29b-41d4-a716-446655440206': 13.13, // auth decline
+        '550e8400-e29b-41d4-a716-446655440207': 26.26, // capture failure
       };
 
       let totalAmount = 0;
@@ -95,6 +100,15 @@ export class OrderService {
       };
 
       this.kafkaClient.emit(KAFKA_TOPICS.ORDER_EVENTS, orderCreatedEvent);
+
+      try {
+        await this.sagaService.startSaga(savedOrder, correlationId);
+      } catch (error) {
+        this.logger.error('SAGA_START_FAILED — order created but saga not started', {
+          correlationId,
+          orderId: savedOrder.id,
+        }, error as Error);
+      }
 
       this.logger.info('Order created successfully', {
         correlationId,
@@ -229,6 +243,9 @@ export class OrderService {
       [OrderStatus.SHIPPED]: [OrderStatus.DELIVERED],
       [OrderStatus.DELIVERED]: [], // Terminal state
       [OrderStatus.CANCELLED]: [], // Terminal state
+      [OrderStatus.PROCESSING]: [],
+      [OrderStatus.COMPLETED]: [],
+      [OrderStatus.FAILED]: [],
     };
 
     return validTransitions[from]?.includes(to) || false;

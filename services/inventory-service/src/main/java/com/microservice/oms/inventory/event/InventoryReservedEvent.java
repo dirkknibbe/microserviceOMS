@@ -13,6 +13,7 @@ import java.util.UUID;
 @AllArgsConstructor
 public class InventoryReservedEvent {
     private String eventType;
+    private UUID eventId;
     private UUID orderId;
     private List<ReservationDto> reservations;
     private LocalDateTime timestamp;

@@ -17,6 +17,7 @@ import { OrderService } from './order.service';
 import { Order, OrderStatus } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { OrderStatusHistory } from './entities/order-status-history.entity';
+import { SagaService } from '../saga';
 
 const mockOrderRepository = () => ({
   create: jest.fn(),
@@ -44,6 +45,7 @@ describe('OrderService', () => {
   let orderRepo: ReturnType<typeof mockOrderRepository>;
   let statusHistoryRepo: ReturnType<typeof mockOrderStatusHistoryRepository>;
   let kafkaClient: ReturnType<typeof mockKafkaClient>;
+  let sagaService: { startSaga: jest.Mock };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -53,6 +55,7 @@ describe('OrderService', () => {
         { provide: getRepositoryToken(OrderItem), useFactory: mockOrderItemRepository },
         { provide: getRepositoryToken(OrderStatusHistory), useFactory: mockOrderStatusHistoryRepository },
         { provide: 'KAFKA_SERVICE', useFactory: mockKafkaClient },
+        { provide: SagaService, useValue: { startSaga: jest.fn() } },
       ],
     }).compile();
 
@@ -60,6 +63,7 @@ describe('OrderService', () => {
     orderRepo = module.get(getRepositoryToken(Order));
     statusHistoryRepo = module.get(getRepositoryToken(OrderStatusHistory));
     kafkaClient = module.get('KAFKA_SERVICE');
+    sagaService = module.get(SagaService);
   });
 
   describe('create', () => {
@@ -90,6 +94,8 @@ describe('OrderService', () => {
         expect.any(String),
         expect.objectContaining({ eventType: 'ORDER_CREATED', orderId: 'order-1' })
       );
+      expect(sagaService.startSaga).toHaveBeenCalledTimes(1);
+      expect(sagaService.startSaga).toHaveBeenCalledWith(savedOrder, expect.any(String));
     });
 
     it('should use price 0 for unknown product IDs', async () => {
@@ -114,6 +120,33 @@ describe('OrderService', () => {
       const result = await service.create(createInput);
 
       expect(result.totalAmount).toBe(0);
+    });
+
+    it('should return order successfully when sagaService.startSaga rejects', async () => {
+      const createInput = {
+        userId: 'user-1',
+        items: [{ productId: '550e8400-e29b-41d4-a716-446655440201', quantity: 1 }],
+      };
+
+      const savedOrder = {
+        id: 'order-3',
+        userId: 'user-1',
+        status: OrderStatus.PENDING,
+        totalAmount: 149.99,
+        items: [{ productId: '550e8400-e29b-41d4-a716-446655440201', quantity: 1, unitPrice: 149.99, totalPrice: 149.99 }],
+      };
+
+      orderRepo.create.mockReturnValue(savedOrder);
+      orderRepo.save.mockResolvedValue(savedOrder);
+      statusHistoryRepo.create.mockReturnValue({});
+      statusHistoryRepo.save.mockResolvedValue({});
+      sagaService.startSaga.mockRejectedValueOnce(new Error('kafka down'));
+
+      const result = await service.create(createInput);
+
+      expect(result).toEqual(savedOrder);
+      expect(orderRepo.save).toHaveBeenCalled();
+      expect(kafkaClient.emit).toHaveBeenCalled();
     });
   });
 

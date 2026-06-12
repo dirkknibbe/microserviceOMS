@@ -1,11 +1,13 @@
 package com.microservice.oms.inventory.service;
 
+import com.microservice.oms.inventory.command.ReleaseStockCommand;
+import com.microservice.oms.inventory.command.ReserveStockCommand;
 import com.microservice.oms.inventory.entity.InventoryReservation;
 import com.microservice.oms.inventory.entity.Product;
 import com.microservice.oms.inventory.entity.StockMovement;
+import com.microservice.oms.inventory.event.InventoryReleasedEvent;
 import com.microservice.oms.inventory.event.InventoryReservedEvent;
 import com.microservice.oms.inventory.event.InventoryReservationFailedEvent;
-import com.microservice.oms.inventory.event.OrderCreatedEvent;
 import com.microservice.oms.inventory.repository.InventoryReservationRepository;
 import com.microservice.oms.inventory.repository.ProductRepository;
 import com.microservice.oms.inventory.repository.StockMovementRepository;
@@ -39,114 +41,150 @@ public class InventoryService {
     private int reservationTimeoutMinutes;
     
     @Transactional
-    public void processOrderCreated(OrderCreatedEvent event) {
-        log.info("Processing order created event: orderId={}, correlationId={}", 
-                 event.getOrderId(), event.getCorrelationId());
-        
+    public void reserveStock(ReserveStockCommand cmd) {
+        log.info("Processing RESERVE_STOCK command: orderId={}, correlationId={}",
+                 cmd.getOrderId(), cmd.getCorrelationId());
+
+        // Idempotent retry: if reservations already exist for this order, re-emit success
+        List<InventoryReservation> existingReservations =
+            reservationRepository.findActiveReservationsByOrderId(cmd.getOrderId());
+        if (!existingReservations.isEmpty()) {
+            log.info("duplicate RESERVE_STOCK for order {} — re-emitting INVENTORY_RESERVED", cmd.getOrderId());
+            emitReserved(cmd.getOrderId(),
+                existingReservations.stream().map(this::toReservationDto).toList(),
+                cmd.getCorrelationId());
+            return;
+        }
+
         List<InventoryReservedEvent.ReservationDto> successfulReservations = new ArrayList<>();
         List<InventoryReservationFailedEvent.FailedItemDto> failedItems = new ArrayList<>();
-        
+
         try {
-            // Process each item in the order
-            for (OrderCreatedEvent.OrderItemDto item : event.getItems()) {
-                Optional<Product> productOpt = productRepository.findById(item.getProductId());
-                
-                if (productOpt.isEmpty()) {
-                    log.warn("Product not found: productId={}", item.getProductId());
-                    failedItems.add(new InventoryReservationFailedEvent.FailedItemDto(
-                        item.getProductId(), item.getQuantity(), 0));
-                    continue;
-                }
-                
-                Product product = productOpt.get();
-                
-                if (!product.hasAvailableStock(item.getQuantity())) {
-                    log.warn("Insufficient stock: productId={}, requested={}, available={}", 
-                             item.getProductId(), item.getQuantity(), product.getAvailableQuantity());
-                    failedItems.add(new InventoryReservationFailedEvent.FailedItemDto(
-                        item.getProductId(), item.getQuantity(), product.getAvailableQuantity()));
-                    continue;
-                }
-                
-                // Reserve stock
-                product.reserveStock(item.getQuantity());
-                productRepository.save(product);
-                
-                // Create reservation record
-                InventoryReservation reservation = new InventoryReservation();
-                reservation.setProduct(product);
-                reservation.setOrderId(event.getOrderId());
-                reservation.setQuantity(item.getQuantity());
-                reservation.setStatus(InventoryReservation.ReservationStatus.ACTIVE);
-                reservation.setExpiresAt(LocalDateTime.now().plusMinutes(reservationTimeoutMinutes));
-                
-                reservation = reservationRepository.save(reservation);
-                
-                // Record stock movement
-                StockMovement movement = StockMovement.reserved(
-                    product, item.getQuantity(), event.getOrderId(), 
-                    "Reserved for order: " + event.getOrderId());
-                stockMovementRepository.save(movement);
-                
-                successfulReservations.add(new InventoryReservedEvent.ReservationDto(
-                    reservation.getId(),
-                    product.getId(),
-                    event.getOrderId(),
-                    reservation.getQuantity(),
-                    reservation.getExpiresAt()));
-                
-                log.info("Stock reserved: productId={}, quantity={}, reservationId={}", 
-                         product.getId(), item.getQuantity(), reservation.getId());
+            for (ReserveStockCommand.Item item : cmd.getItems()) {
+                tryReserveItem(item, cmd.getOrderId(), failedItems)
+                    .ifPresent(successfulReservations::add);
             }
-            
-            // Send appropriate event based on results
+
             if (!successfulReservations.isEmpty() && failedItems.isEmpty()) {
-                // All items successfully reserved
-                InventoryReservedEvent reservedEvent = new InventoryReservedEvent(
-                    "INVENTORY_RESERVED",
-                    event.getOrderId(),
-                    successfulReservations,
-                    LocalDateTime.now(),
-                    event.getCorrelationId());
-                
-                kafkaTemplate.send(inventoryEventsTopic, reservedEvent);
-                log.info("Inventory reservation successful for order: {}", event.getOrderId());
-                
+                emitReserved(cmd.getOrderId(), successfulReservations, cmd.getCorrelationId());
+                log.info("Inventory reservation successful for order: {}", cmd.getOrderId());
             } else if (!failedItems.isEmpty()) {
-                // Some or all items failed to reserve
-                
                 // Release any successful reservations for consistency
                 if (!successfulReservations.isEmpty()) {
-                    releaseReservationsForOrder(event.getOrderId());
+                    releaseReservationsForOrder(cmd.getOrderId());
                 }
-                
-                InventoryReservationFailedEvent failedEvent = new InventoryReservationFailedEvent(
-                    "INVENTORY_RESERVATION_FAILED",
-                    event.getOrderId(),
-                    failedItems,
-                    LocalDateTime.now(),
-                    event.getCorrelationId());
-                
-                kafkaTemplate.send(inventoryEventsTopic, failedEvent);
-                log.warn("Inventory reservation failed for order: {}", event.getOrderId());
+                emitFailed(cmd.getOrderId(), failedItems, cmd.getCorrelationId());
+                log.warn("Inventory reservation failed for order: {}", cmd.getOrderId());
             }
-            
         } catch (Exception e) {
-            log.error("Error processing order created event: orderId={}", event.getOrderId(), e);
-            
+            log.error("Error processing RESERVE_STOCK command: orderId={}", cmd.getOrderId(), e);
+
             // Release any partial reservations
-            releaseReservationsForOrder(event.getOrderId());
-            
-            // Send failure event
-            InventoryReservationFailedEvent failedEvent = new InventoryReservationFailedEvent(
-                "INVENTORY_RESERVATION_FAILED",
-                event.getOrderId(),
-                List.of(), // Empty failed items since this is a system error
-                LocalDateTime.now(),
-                event.getCorrelationId());
-            
-            kafkaTemplate.send(inventoryEventsTopic, failedEvent);
+            releaseReservationsForOrder(cmd.getOrderId());
+
+            // Empty failed items since this is a system error
+            emitFailed(cmd.getOrderId(), List.of(), cmd.getCorrelationId());
         }
+    }
+
+    /**
+     * Checks availability and reserves stock for a single order item, recording the
+     * reservation and stock movement. On a miss (unknown product or insufficient stock)
+     * the item is appended to {@code failedItems} and an empty Optional is returned.
+     */
+    private Optional<InventoryReservedEvent.ReservationDto> tryReserveItem(
+            ReserveStockCommand.Item item,
+            UUID orderId,
+            List<InventoryReservationFailedEvent.FailedItemDto> failedItems) {
+        Optional<Product> productOpt = productRepository.findById(item.getProductId());
+
+        if (productOpt.isEmpty()) {
+            log.warn("Product not found: productId={}", item.getProductId());
+            failedItems.add(new InventoryReservationFailedEvent.FailedItemDto(
+                item.getProductId(), item.getQuantity(), 0));
+            return Optional.empty();
+        }
+
+        Product product = productOpt.get();
+
+        if (!product.hasAvailableStock(item.getQuantity())) {
+            log.warn("Insufficient stock: productId={}, requested={}, available={}",
+                     item.getProductId(), item.getQuantity(), product.getAvailableQuantity());
+            failedItems.add(new InventoryReservationFailedEvent.FailedItemDto(
+                item.getProductId(), item.getQuantity(), product.getAvailableQuantity()));
+            return Optional.empty();
+        }
+
+        product.reserveStock(item.getQuantity());
+        productRepository.save(product);
+
+        InventoryReservation reservation = new InventoryReservation();
+        reservation.setProduct(product);
+        reservation.setOrderId(orderId);
+        reservation.setQuantity(item.getQuantity());
+        reservation.setStatus(InventoryReservation.ReservationStatus.ACTIVE);
+        reservation.setExpiresAt(LocalDateTime.now().plusMinutes(reservationTimeoutMinutes));
+
+        reservation = reservationRepository.save(reservation);
+
+        StockMovement movement = StockMovement.reserved(
+            product, item.getQuantity(), orderId,
+            "Reserved for order: " + orderId);
+        stockMovementRepository.save(movement);
+
+        log.info("Stock reserved: productId={}, quantity={}, reservationId={}",
+                 product.getId(), item.getQuantity(), reservation.getId());
+
+        return Optional.of(toReservationDto(reservation));
+    }
+
+    private InventoryReservedEvent.ReservationDto toReservationDto(InventoryReservation reservation) {
+        return new InventoryReservedEvent.ReservationDto(
+            reservation.getId(),
+            reservation.getProduct().getId(),
+            reservation.getOrderId(),
+            reservation.getQuantity(),
+            reservation.getExpiresAt());
+    }
+
+    private void emitReserved(UUID orderId,
+                              List<InventoryReservedEvent.ReservationDto> reservations,
+                              String correlationId) {
+        kafkaTemplate.send(inventoryEventsTopic, new InventoryReservedEvent(
+            "INVENTORY_RESERVED",
+            UUID.randomUUID(),
+            orderId,
+            reservations,
+            LocalDateTime.now(),
+            correlationId));
+    }
+
+    private void emitFailed(UUID orderId,
+                            List<InventoryReservationFailedEvent.FailedItemDto> failedItems,
+                            String correlationId) {
+        kafkaTemplate.send(inventoryEventsTopic, new InventoryReservationFailedEvent(
+            "INVENTORY_RESERVATION_FAILED",
+            UUID.randomUUID(),
+            orderId,
+            failedItems,
+            LocalDateTime.now(),
+            correlationId));
+    }
+
+    @Transactional
+    public void releaseStock(ReleaseStockCommand cmd) {
+        log.info("Processing RELEASE_STOCK command: orderId={}, correlationId={}",
+                 cmd.getOrderId(), cmd.getCorrelationId());
+
+        releaseReservationsForOrder(cmd.getOrderId());
+
+        // Always emit success — releasing nothing is still a successful release (idempotent)
+        kafkaTemplate.send(inventoryEventsTopic, new InventoryReleasedEvent(
+            "INVENTORY_RELEASED",
+            UUID.randomUUID(),
+            cmd.getOrderId(),
+            LocalDateTime.now(),
+            cmd.getCorrelationId()));
     }
     
     @Transactional

@@ -68,10 +68,16 @@ app:
     topics:
       order-events: order.events
       inventory-events: inventory.events
+      inventory-commands: inventory.commands
+      fulfillment-commands: fulfillment.commands
+      fulfillment-events: fulfillment.events
   
   inventory:
     reservation-timeout-minutes: 60
     low-stock-threshold: 10
+
+  fulfillment:
+    step-delay-ms: 2000
 
 ---
 spring:
