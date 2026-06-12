@@ -16,6 +16,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -23,8 +24,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class FulfillmentSimulatorTest {
@@ -57,6 +60,11 @@ class FulfillmentSimulatorTest {
         return new ReleaseOrderCommand("RELEASE_ORDER", UUID.randomUUID(), orderId, CORRELATION_ID);
     }
 
+    private void stubSuccessfulSends() {
+        when(kafkaTemplate.send(eq(TOPIC), any()))
+            .thenReturn(CompletableFuture.completedFuture(null));
+    }
+
     private void awaitThreeEventsOnFulfillmentTopic() {
         await().atMost(Duration.ofSeconds(5)).untilAsserted(
             () -> verify(kafkaTemplate, times(3)).send(eq(TOPIC), any()));
@@ -74,6 +82,7 @@ class FulfillmentSimulatorTest {
     void releaseOrderEventuallyEmitsPickedPackedShippedInOrder() {
         // Arrange
         UUID orderId = UUID.randomUUID();
+        stubSuccessfulSends();
 
         // Act
         simulator.releaseOrder(releaseOrderCommand(orderId));
@@ -95,6 +104,7 @@ class FulfillmentSimulatorTest {
     void confirmReservationInvokedExactlyOnceBeforeOrderShippedIsEmitted() {
         // Arrange
         UUID orderId = UUID.randomUUID();
+        stubSuccessfulSends();
 
         // Act
         simulator.releaseOrder(releaseOrderCommand(orderId));
@@ -115,6 +125,7 @@ class FulfillmentSimulatorTest {
         // Arrange
         UUID orderId = UUID.randomUUID();
         ReleaseOrderCommand command = releaseOrderCommand(orderId);
+        stubSuccessfulSends();
 
         // Act: second call lands while the first pipeline is still in flight
         simulator.releaseOrder(command);
@@ -131,5 +142,23 @@ class FulfillmentSimulatorTest {
             .filter(event -> "ORDER_PICKED".equals(event.getEventType()))
             .count();
         assertThat(pickedCount).isEqualTo(1);
+    }
+
+    @Test
+    void abortsPipelineWhenStepEmissionFails() {
+        // Arrange: first send (ORDER_PICKED) throws synchronously, any later send would succeed
+        UUID orderId = UUID.randomUUID();
+        when(kafkaTemplate.send(eq(TOPIC), any()))
+            .thenThrow(new RuntimeException("boom"))
+            .thenReturn(CompletableFuture.completedFuture(null));
+
+        // Act
+        simulator.releaseOrder(releaseOrderCommand(orderId));
+
+        // Assert: only the failed PICKED attempt — count holds at 1 across the full pipeline window
+        await().during(Duration.ofMillis(STEP_DELAY_MS * 5))
+            .atMost(Duration.ofSeconds(5))
+            .untilAsserted(() -> verify(kafkaTemplate, times(1)).send(eq(TOPIC), any()));
+        verify(inventoryService, never()).confirmReservation(any());
     }
 }
