@@ -85,7 +85,10 @@ INSERT INTO products (id, name, description, price, sku, stock_quantity) VALUES
     ('550e8400-e29b-41d4-a716-446655440202', 'Smart Watch', 'Fitness tracking smartwatch with heart rate monitor', 199.99, 'SW-002', 25),
     ('550e8400-e29b-41d4-a716-446655440203', 'Bluetooth Speaker', 'Portable waterproof Bluetooth speaker', 29.99, 'BS-003', 100),
     ('550e8400-e29b-41d4-a716-446655440204', 'Laptop Stand', 'Adjustable aluminum laptop stand', 79.99, 'LS-004', 30),
-    ('550e8400-e29b-41d4-a716-446655440205', 'USB-C Hub', '7-in-1 USB-C hub with HDMI and ethernet', 59.99, 'UCH-005', 75);
+    ('550e8400-e29b-41d4-a716-446655440205', 'USB-C Hub', '7-in-1 USB-C hub with HDMI and ethernet', 59.99, 'UCH-005', 75),
+    -- Saga demo triggers: order totals of 13.13 / 26.26 deterministically fail in payment-service
+    ('550e8400-e29b-41d4-a716-446655440206', 'Demo Auth-Decline Widget', 'Saga demo: payment authorization declines at $13.13', 13.13, 'DEMO-AUTH-FAIL', 500),
+    ('550e8400-e29b-41d4-a716-446655440207', 'Demo Capture-Fail Widget', 'Saga demo: payment capture fails at $26.26', 26.26, 'DEMO-CAP-FAIL', 500);
 
 -- Insert sample reservations
 INSERT INTO inventory_reservations (product_id, order_id, quantity, expires_at) VALUES

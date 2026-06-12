@@ -43,6 +43,9 @@ export class OrderService {
         '550e8400-e29b-41d4-a716-446655440201': 149.99,
         '550e8400-e29b-41d4-a716-446655440202': 199.99,
         '550e8400-e29b-41d4-a716-446655440203': 29.99,
+        // Saga demo triggers: these totals deterministically fail in payment-service
+        '550e8400-e29b-41d4-a716-446655440206': 13.13, // auth decline
+        '550e8400-e29b-41d4-a716-446655440207': 26.26, // capture failure
       };
 
       let totalAmount = 0;
