@@ -15,6 +15,7 @@ export enum ReservationStatus {
 
 export interface InventoryReservedEvent {
   eventType: 'INVENTORY_RESERVED';
+  eventId?: string;
   orderId: string;
   reservations: InventoryReservation[];
   timestamp: Date;
@@ -23,6 +24,7 @@ export interface InventoryReservedEvent {
 
 export interface InventoryReservationFailedEvent {
   eventType: 'INVENTORY_RESERVATION_FAILED';
+  eventId?: string;
   orderId: string;
   failedItems: Array<{
     productId: string;

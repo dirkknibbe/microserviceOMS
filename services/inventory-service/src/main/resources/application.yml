@@ -68,6 +68,9 @@ app:
     topics:
       order-events: order.events
       inventory-events: inventory.events
+      inventory-commands: inventory.commands
+      fulfillment-commands: fulfillment.commands
+      fulfillment-events: fulfillment.events
   
   inventory:
     reservation-timeout-minutes: 60
