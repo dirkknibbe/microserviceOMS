@@ -98,3 +98,6 @@ test-results/
 # Compiled output (per-service)
 **/dist/
 **/build/
+# Build/runtime artifact caches
+jest_dx/
+node-compile-cache/
