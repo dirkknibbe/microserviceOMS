@@ -2,6 +2,7 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Apollo, gql, QueryRef } from 'apollo-angular';
+import { ApolloQueryResult } from '@apollo/client';
 import { Subscription } from 'rxjs';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
@@ -37,6 +38,38 @@ const GET_ORDER_DETAIL = gql`
   }
 `;
 
+// GraphQL query result interfaces
+interface OrderDetailQueryItem {
+  id: string;
+  productId: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+}
+
+interface OrderDetailQueryHistory {
+  id: string;
+  newStatus: string;
+  reason: string | null;
+  changedAt: string;
+}
+
+interface OrderDetailQueryOrder {
+  id: string;
+  userId: string;
+  status: string;
+  totalAmount: number;
+  createdAt: string;
+  updatedAt: string;
+  items: OrderDetailQueryItem[];
+  statusHistory: OrderDetailQueryHistory[];
+}
+
+interface GetOrderDetailResult {
+  order: OrderDetailQueryOrder | null;
+}
+
+// UI display model (maps backend data + placeholder fields)
 interface OrderDetail {
   id: string;
   customerName: string;
@@ -540,7 +573,7 @@ export class OrderDetailComponent implements OnInit, OnDestroy {
   order: OrderDetail | null = null;
   orderId: string = '';
 
-  private queryRef: QueryRef<any, { id: string }> | null = null;
+  private queryRef: QueryRef<GetOrderDetailResult, { id: string }> | null = null;
   private orderSubscription: Subscription | null = null;
   private routeSubscription: Subscription | null = null;
 
@@ -563,7 +596,7 @@ export class OrderDetailComponent implements OnInit, OnDestroy {
     this.orderSubscription?.unsubscribe();
     this.queryRef?.stopPolling();
 
-    const queryRef = this.apollo.watchQuery<any, { id: string }>({
+    const queryRef = this.apollo.watchQuery<GetOrderDetailResult, { id: string }>({
       query: GET_ORDER_DETAIL,
       variables: { id: this.orderId },
       fetchPolicy: 'cache-and-network',
@@ -572,7 +605,7 @@ export class OrderDetailComponent implements OnInit, OnDestroy {
     this.queryRef = queryRef;
 
     this.orderSubscription = queryRef.valueChanges.subscribe({
-      next: (result: any) => {
+      next: (result: ApolloQueryResult<GetOrderDetailResult>) => {
         const order = result.data?.order;
         if (!order) {
           return;
@@ -590,7 +623,7 @@ export class OrderDetailComponent implements OnInit, OnDestroy {
 
   // Customer, address, and payment fields are placeholders — the backend
   // schema does not expose them (see GraphQL schema notes).
-  private mapToOrderDetail(order: any): OrderDetail {
+  private mapToOrderDetail(order: OrderDetailQueryOrder): OrderDetail {
     return {
       id: order.id,
       customerName: 'John Doe',
@@ -614,7 +647,7 @@ export class OrderDetailComponent implements OnInit, OnDestroy {
         zipCode: '10001',
         country: 'United States'
       },
-      items: (order.items || []).map((item: any) => ({
+      items: (order.items || []).map((item: OrderDetailQueryItem) => ({
         id: item.id,
         productId: item.productId,
         productName: `Product ${item.productId.slice(0, 8)}`,
@@ -623,7 +656,7 @@ export class OrderDetailComponent implements OnInit, OnDestroy {
         unitPrice: Number(item.unitPrice),
         totalPrice: Number(item.totalPrice)
       })),
-      statusHistory: (order.statusHistory || []).map((history: any) => ({
+      statusHistory: (order.statusHistory || []).map((history: OrderDetailQueryHistory) => ({
         status: history.newStatus,
         timestamp: history.changedAt,
         note: history.reason || undefined
