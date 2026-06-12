@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { AppModule } from './app.module';
 import { createLogger } from '@shared/utils';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -37,6 +38,19 @@ async function bootstrap() {
         forbidNonWhitelisted: true,
       })
     );
+
+    // Hybrid bootstrap: Kafka consumer for saga reply events
+    app.connectMicroservice<MicroserviceOptions>({
+      transport: Transport.KAFKA,
+      options: {
+        client: {
+          clientId: 'order-service-consumer',
+          brokers: [configService.get<string>('KAFKA_BROKER', 'localhost:9092')],
+        },
+        consumer: { groupId: 'order-service-saga' },
+      },
+    });
+    await app.startAllMicroservices();
 
     await app.listen(port);
     

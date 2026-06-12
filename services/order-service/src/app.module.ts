@@ -7,9 +7,12 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
 
 import { OrderModule } from './order/order.module';
 import { HealthModule } from './health/health.module';
+import { SagaModule } from './saga/saga.module';
 import { Order } from './order/entities/order.entity';
 import { OrderItem } from './order/entities/order-item.entity';
 import { OrderStatusHistory } from './order/entities/order-status-history.entity';
+import { SagaInstance } from './saga/entities/saga-instance.entity';
+import { ProcessedEvent } from './saga/entities/processed-event.entity';
 
 @Module({
   imports: [
@@ -25,7 +28,7 @@ import { OrderStatusHistory } from './order/entities/order-status-history.entity
       useFactory: (configService: ConfigService) => ({
         type: 'postgres',
         url: configService.get<string>('DATABASE_URL'),
-        entities: [Order, OrderItem, OrderStatusHistory],
+        entities: [Order, OrderItem, OrderStatusHistory, SagaInstance, ProcessedEvent],
         synchronize: configService.get<string>('NODE_ENV') === 'development',
         logging: configService.get<string>('NODE_ENV') === 'development',
         retryAttempts: 3,
@@ -81,6 +84,7 @@ import { OrderStatusHistory } from './order/entities/order-status-history.entity
 
     // Feature modules
     OrderModule,
+    SagaModule,
     HealthModule,
   ],
   controllers: [],

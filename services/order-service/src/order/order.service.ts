@@ -9,6 +9,7 @@ import { CreateOrderInput } from './dto/create-order.dto';
 import { UpdateOrderStatusInput } from './dto/update-order.dto';
 import { createLogger, CorrelationIdGenerator } from '@shared/utils';
 import { OrderCreatedEvent, OrderStatusUpdatedEvent, KAFKA_TOPICS } from '@shared/events';
+import { SagaService } from '../saga';
 
 @Injectable()
 export class OrderService {
@@ -23,6 +24,7 @@ export class OrderService {
     private readonly orderStatusHistoryRepository: Repository<OrderStatusHistory>,
     @Inject('KAFKA_SERVICE')
     private readonly kafkaClient: ClientProxy,
+    private readonly sagaService: SagaService,
   ) {}
 
   async create(createOrderInput: CreateOrderInput): Promise<Order> {
@@ -95,6 +97,8 @@ export class OrderService {
       };
 
       this.kafkaClient.emit(KAFKA_TOPICS.ORDER_EVENTS, orderCreatedEvent);
+
+      await this.sagaService.startSaga(savedOrder, correlationId);
 
       this.logger.info('Order created successfully', {
         correlationId,

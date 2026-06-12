@@ -2,16 +2,17 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { OrderService } from './order.service';
-import { OrderResolver, OrderItemResolver } from './order.resolver';
-import { SagaModule } from '../saga/saga.module';
-import { Order } from './entities/order.entity';
-import { OrderItem } from './entities/order-item.entity';
-import { OrderStatusHistory } from './entities/order-status-history.entity';
+import { SagaService } from './saga.service';
+import { SagaConsumer } from './saga.consumer';
+import { SagaInstance } from './entities/saga-instance.entity';
+import { ProcessedEvent } from './entities/processed-event.entity';
+import { Order } from '../order/entities/order.entity';
+import { OrderItem } from '../order/entities/order-item.entity';
+import { OrderStatusHistory } from '../order/entities/order-status-history.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Order, OrderItem, OrderStatusHistory]),
+    TypeOrmModule.forFeature([SagaInstance, ProcessedEvent, Order, OrderItem, OrderStatusHistory]),
     ClientsModule.registerAsync([
       {
         name: 'KAFKA_SERVICE',
@@ -21,7 +22,7 @@ import { OrderStatusHistory } from './entities/order-status-history.entity';
           transport: Transport.KAFKA,
           options: {
             client: {
-              clientId: 'order-service',
+              clientId: 'order-service-saga',
               brokers: [configService.get<string>('KAFKA_BROKER', 'localhost:9092')],
             },
             consumer: { groupId: 'order-service-consumer' },
@@ -29,9 +30,9 @@ import { OrderStatusHistory } from './entities/order-status-history.entity';
         }),
       },
     ]),
-    SagaModule,
   ],
-  providers: [OrderService, OrderResolver, OrderItemResolver],
-  exports: [OrderService],
+  controllers: [SagaConsumer],
+  providers: [SagaService],
+  exports: [SagaService],
 })
-export class OrderModule {}
+export class SagaModule {}
