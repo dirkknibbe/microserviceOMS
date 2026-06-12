@@ -121,6 +121,33 @@ describe('OrderService', () => {
 
       expect(result.totalAmount).toBe(0);
     });
+
+    it('should return order successfully when sagaService.startSaga rejects', async () => {
+      const createInput = {
+        userId: 'user-1',
+        items: [{ productId: '550e8400-e29b-41d4-a716-446655440201', quantity: 1 }],
+      };
+
+      const savedOrder = {
+        id: 'order-3',
+        userId: 'user-1',
+        status: OrderStatus.PENDING,
+        totalAmount: 149.99,
+        items: [{ productId: '550e8400-e29b-41d4-a716-446655440201', quantity: 1, unitPrice: 149.99, totalPrice: 149.99 }],
+      };
+
+      orderRepo.create.mockReturnValue(savedOrder);
+      orderRepo.save.mockResolvedValue(savedOrder);
+      statusHistoryRepo.create.mockReturnValue({});
+      statusHistoryRepo.save.mockResolvedValue({});
+      sagaService.startSaga.mockRejectedValueOnce(new Error('kafka down'));
+
+      const result = await service.create(createInput);
+
+      expect(result).toEqual(savedOrder);
+      expect(orderRepo.save).toHaveBeenCalled();
+      expect(kafkaClient.emit).toHaveBeenCalled();
+    });
   });
 
   describe('findOne', () => {

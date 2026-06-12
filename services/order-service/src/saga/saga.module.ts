@@ -22,10 +22,10 @@ import { OrderStatusHistory } from '../order/entities/order-status-history.entit
           transport: Transport.KAFKA,
           options: {
             client: {
-              clientId: 'order-service-saga',
+              clientId: 'order-service-saga-producer',
               brokers: [configService.get<string>('KAFKA_BROKER', 'localhost:9092')],
             },
-            consumer: { groupId: 'order-service-consumer' },
+            consumer: { groupId: 'order-service-consumer' }, // vestigial — emit-only client, never subscribes
           },
         }),
       },

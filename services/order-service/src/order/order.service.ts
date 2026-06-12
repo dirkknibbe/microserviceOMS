@@ -98,7 +98,14 @@ export class OrderService {
 
       this.kafkaClient.emit(KAFKA_TOPICS.ORDER_EVENTS, orderCreatedEvent);
 
-      await this.sagaService.startSaga(savedOrder, correlationId);
+      try {
+        await this.sagaService.startSaga(savedOrder, correlationId);
+      } catch (error) {
+        this.logger.error('SAGA_START_FAILED — order created but saga not started', {
+          correlationId,
+          orderId: savedOrder.id,
+        }, error as Error);
+      }
 
       this.logger.info('Order created successfully', {
         correlationId,
