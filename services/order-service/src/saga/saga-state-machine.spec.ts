@@ -1,5 +1,5 @@
 import { transition } from './saga-state-machine';
-import { SagaState, SagaMessageType } from './saga-states';
+import { SagaState, SagaMessageType, SAGA_MESSAGE_TYPES } from './saga-states';
 
 describe('saga transition', () => {
   const legal: Array<[SagaState, SagaMessageType, SagaState, string[], string[]]> = [
@@ -26,14 +26,9 @@ describe('saga transition', () => {
 
   it('no-ops every (state, message) pair not in the legal table', () => {
     const states = Object.values(SagaState);
-    const messages: SagaMessageType[] = [
-      'INVENTORY_RESERVED', 'INVENTORY_RESERVATION_FAILED', 'INVENTORY_RELEASED',
-      'PAYMENT_AUTHORIZED', 'PAYMENT_AUTH_FAILED', 'PAYMENT_CAPTURED',
-      'PAYMENT_CAPTURE_FAILED', 'ORDER_PICKED', 'ORDER_PACKED', 'ORDER_SHIPPED',
-    ];
     const legalKeys = new Set(legal.map(([f, m]) => `${f}|${m}`));
     for (const s of states) {
-      for (const m of messages) {
+      for (const m of SAGA_MESSAGE_TYPES) {
         if (legalKeys.has(`${s}|${m}`)) continue;
         const d = transition(s, m);
         expect(d.isNoOp).toBe(true);

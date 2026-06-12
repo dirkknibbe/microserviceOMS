@@ -21,18 +21,21 @@ export const TERMINAL_STATES: readonly SagaState[] = [
   SagaState.CAPTURE_FAILED,
 ];
 
+export const SAGA_MESSAGE_TYPES = [
+  'INVENTORY_RESERVED',
+  'INVENTORY_RESERVATION_FAILED',
+  'INVENTORY_RELEASED',
+  'PAYMENT_AUTHORIZED',
+  'PAYMENT_AUTH_FAILED',
+  'PAYMENT_CAPTURED',
+  'PAYMENT_CAPTURE_FAILED',
+  'ORDER_PICKED',
+  'ORDER_PACKED',
+  'ORDER_SHIPPED',
+] as const;
+
 /** Reply-event types the saga reacts to. */
-export type SagaMessageType =
-  | 'INVENTORY_RESERVED'
-  | 'INVENTORY_RESERVATION_FAILED'
-  | 'INVENTORY_RELEASED'
-  | 'PAYMENT_AUTHORIZED'
-  | 'PAYMENT_AUTH_FAILED'
-  | 'PAYMENT_CAPTURED'
-  | 'PAYMENT_CAPTURE_FAILED'
-  | 'ORDER_PICKED'
-  | 'ORDER_PACKED'
-  | 'ORDER_SHIPPED';
+export type SagaMessageType = (typeof SAGA_MESSAGE_TYPES)[number];
 
 /** Command kinds the saga can dispatch (payloads are built by SagaService). */
 export type SagaCommandType =
@@ -47,8 +50,8 @@ export type SagaOrderEventType = 'ORDER_CONFIRMED' | 'ORDER_SHIPPED_NOTICE' | 'O
 
 export interface SagaDecision {
   newState: SagaState;
-  commands: SagaCommandType[];
-  orderEvents: SagaOrderEventType[];
+  commands: readonly SagaCommandType[];
+  orderEvents: readonly SagaOrderEventType[];
   isNoOp: boolean;
 }
 
